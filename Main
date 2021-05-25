@@ -1,0 +1,285 @@
+from numpy import *
+import numpy as np
+import Tool
+import Tool2
+import random
+import math
+import os
+import time
+import pandas as pd
+import csv
+import math
+import random
+import MyCNN
+from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import roc_auc_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import classification_report
+from keras.datasets import mnist
+import matplotlib.pyplot as plt
+import SigmoidKernel
+
+
+
+# 读数据
+DiseaseAndRNABinary = []
+Tool.ReadMyCsv(DiseaseAndRNABinary, "DiseaseAndDrugBinary.csv")
+
+LncDisease = []
+Tool.ReadMyCsv2(LncDisease, "LncDisease.csv")
+AllDisease = []
+Tool.ReadMyCsv2(AllDisease, "Alldisease.csv")
+AllRNA = []
+Tool.ReadMyCsv2(AllRNA, "Alldrug.csv")
+
+
+# 由DiseaseAndRNABinary生成数字表示的LncDisease，其中DiseaseAndRNABinary行为disease，列为lncRNA
+LncDiseaseNum = Tool2.MyBinaryMatrixToNum(DiseaseAndRNABinary)
+
+# 产生“固定”的随机样本，每次交叉验证时随机取
+# 产生NegativeSample[[counterR,counterD],...,[]]，和LncDiseaseNum对应，先lnc后disease，取NegativeSampleFeature时由此索引
+NegativeSampleNum = Tool2.NegativeNumGenerate(LncDisease, AllDisease, AllRNA)
+
+# 产生不重复的随机数为交叉验证做准备
+RandomList = random.sample(range(0, len(LncDiseaseNum)), len(LncDiseaseNum))
+
+# 对RandomList切分为5份，LOOCV不用切分
+NewRandomList = Tool2.partition(RandomList, math.floor(len(RandomList) / 10))
+Tool.StorFile(NewRandomList, 'NewRandomList.csv')
+
+
+# 10-fold交叉验证
+tprs = []
+aucs = []
+mean_fpr = np.linspace(0, 1, 100)
+j = 0
+num=0
+
+counter = 0
+while counter < 10:
+    TestList = []
+    TrainList = []
+    # 取RandomList当前测试和验证部分
+    for i in range(10):
+        if i == counter:
+            TestList.extend(NewRandomList[i])
+        else:
+            TrainList.extend(NewRandomList[i])
+    print('TestList', TestList)
+    # Tool.StorFile(TestList, "TestList0.csv")
+    # Tool.StorFile(TrainList, "TrainList0.csv")
+
+
+    # 由Test和Train构建新的NewDiseaseAndRNABinary，方便生成NegativeSample和Feature，正样本赋1，测试样本赋0，未标记样本赋0，测试样本被TestList索引
+    NewDiseaseAndRNABinary = Tool2.MyNewDiseaseAndRNABinary(TestList, TrainList, AllDisease, AllRNA, LncDiseaseNum)
+    NewDiseaseAndRNABinaryName = 'NewDiseaseAndRNABinary' + str(counter) + '.csv'
+    Tool.StorFile(NewDiseaseAndRNABinary, NewDiseaseAndRNABinaryName)
+
+    # 读取NewDiseaseAndRNABinary
+    NewDiseaseAndRNABinary=[]
+    NewDiseaseAndRNABinaryName = 'NewDiseaseAndRNABinary' + str(counter) + '.csv'
+    Tool.ReadMyCsv2(NewDiseaseAndRNABinary, NewDiseaseAndRNABinaryName)
+
+
+
+    # 由NewDiseaseAndRNABinary生成高斯核（sigmoid）
+    SigmoidDisease = SigmoidKernel.SigmoidKernelDisease(NewDiseaseAndRNABinary)
+    SigmoidDiseaseName = 'SigmoidDisease' + str(counter) + ".csv"
+    Tool.StorFile(SigmoidDisease,SigmoidDiseaseName)
+
+    SigmoidRNA = SigmoidKernel.SigmoidKernelRNA(NewDiseaseAndRNABinary)
+    SigmoidRNAName = 'SigmoidRNA' + str(counter) + ".csv"
+    Tool.StorFile(SigmoidRNA, SigmoidRNAName)
+    # GaussianKernelDisease = Tool2.GaussianKernelDisease(NewDiseaseAndRNABinary)
+    # GaussianKernelDiseaseName = 'GaussianKernelDisease' + str(counter) + '.csv'
+    # Tool.StorFile(GaussianKernelDisease, GaussianKernelDiseaseName)
+
+    # GaussianKernelRNA = Tool2.GaussianKernelRNA(NewDiseaseAndRNABinary)
+    # GaussianKernelRNAName = 'GaussianKernelRNA' + str(counter) + '.csv'
+    # Tool.StorFile(GaussianKernelRNA, GaussianKernelRNAName)
+
+    # 读取高斯核 Sigmoid
+
+    # GaussianKernelDisease = []
+    # GaussianKernelDiseaseName = 'GaussianKernelDisease' + str(counter) + '.csv'
+    # Tool.ReadMyCsv2(GaussianKernelDisease, GaussianKernelDiseaseName)
+    # print(len(GaussianKernelDisease))
+    #
+    # GaussianKernelRNA = []
+    # GaussianKernelRNAName= 'GaussianKernelRNA' + str(counter) + '.csv'
+    # Tool.ReadMyCsv2(GaussianKernelRNA, GaussianKernelRNAName)
+    # print(len(GaussianKernelRNA))
+    SigmoidDisease = []
+    SigmoidDiseaseName = 'SigmoidDisease' + str(counter) + '.csv'
+    Tool.ReadMyCsv2(SigmoidDisease, SigmoidDiseaseName)
+    print(len(SigmoidDisease))
+
+    SigmoidRNA = []
+    SigmoidRNAName= 'SigmoidRNARNA' + str(counter) + '.csv'
+    Tool.ReadMyCsv2(SigmoidRNA, SigmoidRNAName)
+    print(len(SigmoidRNA))
+    # disease的文本挖掘相似矩阵
+    lines = [line.strip().split() for line in open("disease相似性矩阵.txt")]
+    txtSimilarity = []
+    i = 0
+    for dis in lines:
+        i = i + 1
+        if i == 1:
+            continue
+        txtSimilarity.append(dis[1:])
+    print(len(txtSimilarity))
+    print(len(txtSimilarity[1]))
+
+    # drug的文本挖掘相似矩阵
+    lines = [line.strip().split() for line in open("drug相似性矩阵.txt")]
+    drugtxtSimilarity = []
+    i = 0
+    for dis in lines:
+        i = i + 1
+        if i == 1:
+            continue
+        drugtxtSimilarity.append(dis[1:])
+    print(len(drugtxtSimilarity))
+    print(len(drugtxtSimilarity[1]))
+
+    # DiseaseSimilarity = []
+    # DiseaseSimilarity = np.hstack((txtSimilarity, GaussianKernelDisease))
+    DiseaseSimilarity = []
+    counter = 0
+    while counter < len(AllDisease):
+        counter1 = 0
+        Row = []
+        while counter1 < len(AllDisease):
+            v = float(txtSimilarity[counter][counter1])
+            # v = float(DiseaseGaussian[counter][counter1])
+            # v = (DiseaseSimilarityModel1[counter][counter1] + DiseaseSimilarityModel2[counter][counter1]) / 2
+            if v > 0:
+                Row.append(v)
+            if v == 0:
+                # Row.append(txtSimilarity[counter][counter1])
+                Row.append(SigmoidDisease[counter][counter1])
+
+            counter1 = counter1 + 1
+        DiseaseSimilarity.append(Row)
+        counter = counter + 1
+    print('len(DiseaseSimilarity)', len(DiseaseSimilarity))
+    print('len(DiseaseSimilarity[0)', len(DiseaseSimilarity[0]))
+
+    DrugSimilarity = []
+    # DRUGSimilarity = np.hstack((drugtxtSimilarity, GaussianKernelRNA))
+    counter = 0
+    while counter < len(AllRNA):
+        counter1 = 0
+        Row = []
+        while counter1 < len(AllRNA):
+            v = float(drugtxtSimilarity[counter][counter1])
+            # v = float(DiseaseGaussian[counter][counter1])
+            # v = (DiseaseSimilarityModel1[counter][counter1] + DiseaseSimilarityModel2[counter][counter1]) / 2
+            if v > 0:
+                Row.append(v)
+            if v == 0:
+                # Row.append(txtSimilarity[counter][counter1])
+                Row.append(SigmoidRNA[counter][counter1])
+
+            counter1 = counter1 + 1
+        DrugSimilarity.append(Row)
+        counter = counter + 1
+    print(len(DrugSimilarity))
+    # drugfingerprint = []
+    # Tool.ReadMyCsv2(drugfingerprint, "drugfingerprint.csv")
+    # print(len(drugfingerprint))
+    # print(len(drugfingerprint[0]))
+    # DrugSimilarity = []
+    # DrugSimilarity = np.hstack((DRUGSimilarity, drugfingerprint))
+    # print('len(DrugSimilarity)', len(DrugSimilarity))
+    # print('len(DrugSimilarity[0])', len(DrugSimilarity[0]))
+
+    # 暂时由高斯核作为Feature，方便计算，DAG可以直接读取进来加权平均
+    # 生成正、负、测试样本，正、负样本由之前的索引+特征矩阵构成，测试样本为TestList索引
+    TrainPositiveFeature, TestPositiveFeature = Tool2.PositiveFeatureGenerate(LncDiseaseNum, TrainList, TestList, DiseaseSimilarity, DrugSimilarity)
+    TrainNegativeFeature, TestNegativeFeature = Tool2.NegativeFeatureGenerate(NegativeSampleNum, TrainList, TestList, DiseaseSimilarity, DrugSimilarity)
+
+    
+    # CNN
+    SampleFeature = []
+    SampleFeature.extend(TrainPositiveFeature)
+    SampleFeature.extend(TrainNegativeFeature)
+    SampleFeature.extend(TestPositiveFeature)
+    SampleFeature.extend(TestNegativeFeature)
+    SampleFeatureName = 'SampleFeature' + str(counter) + '.csv'
+    Tool.StorFile(SampleFeature, SampleFeatureName)
+    #测试
+    SampleFeatureAuto = []
+    Tool.ReadMyCsv2(SampleFeatureAuto, "SampleFeatureCNN0.csv")
+
+    SampleFeatureAuto = MyCNN.MyCNN(SampleFeature)
+    SampleFeatureAutoName = 'SampleFeatureCNN' + str(counter) + '.csv'
+    Tool.StorFile(SampleFeatureAuto, SampleFeatureAutoName)
+    # 注意保存每一步的数据
+    TrainFeatureAuto = SampleFeatureAuto[0: 2 * len(TrainPositiveFeature)]
+    TestFeatureAuto = SampleFeatureAuto[2 * len(TrainPositiveFeature):]
+    print("len(TrainFeatureAuto)", len(TrainFeatureAuto))
+    print("len(TestFeatureAuto)", len(TestFeatureAuto))
+
+
+    # Label
+    TrainLabel = np.array(Tool2.MySampleLabel(TrainFeatureAuto))
+    TestLabel = np.array(Tool2.MySampleLabel(TestFeatureAuto))
+
+
+    # 训练和测试
+
+    model = RandomForestClassifier(n_estimators=100,max_depth=100)
+    predicted = model.fit(TrainFeatureAuto, TrainLabel).predict_proba(TestFeatureAuto)
+    fpr, tpr, thresholds = roc_curve(TestLabel, predicted[:, 1])
+    predicted1 = model.predict(TestFeatureAuto)
+    num = num + 1
+    print("==================", num, "fold", "==================")
+    print('Test accuracy: ', accuracy_score(TestLabel, predicted1))
+    print(classification_report(TestLabel, predicted1, digits=4))
+    print(confusion_matrix(TestLabel, predicted1))
+    tprs.append(interp(mean_fpr, fpr, tpr))
+    tprs[-1][0] = 0.0
+    roc_auc = auc(fpr, tpr)
+    aucs.append(roc_auc)
+    plt.plot(fpr, tpr, lw=1, alpha=0.3,
+             label='ROC fold %d (AUC = %0.4f)' % (i, roc_auc))
+    j +=1
+
+    model.fit(TrainFeatureAuto, TrainLabel)
+    Predict = model.predict(TestFeatureAuto)
+    PredictProb = model.predict_proba(TestFeatureAuto)
+
+
+    # 保存结果
+    RealAndPrediction = Tool2.MyRealAndPrediction(TestLabel, Predict)
+    RealAndPredictionName = 'RealAndPrediction' + str(counter) + '.csv'
+    Tool.StorFile(RealAndPrediction, RealAndPredictionName)
+
+
+    RealAndPredictionProb = Tool2.MyRealAndPredictionProb(TestLabel, PredictProb)
+    RealAndPredictionNameProb = 'RealAndPredictionProb' + str(counter) + '.csv'
+    Tool.StorFile(RealAndPredictionProb, RealAndPredictionNameProb)
+
+    # break
+    counter = counter + 1
+mean_tpr = np.mean(tprs, axis=0)
+mean_tpr[-1] = 1.0
+mean_auc = auc(mean_fpr, mean_tpr)
+std_auc = np.std(aucs)
+plt.plot(mean_fpr, mean_tpr, color='b',label=r'Mean ROC (AUC = %0.4f $\pm$ %0.4f)' % (mean_auc, std_auc), lw=1.5, alpha=.8)
+
+std_tpr = np.std(tprs, axis=0)
+tprs_upper = np.minimum(mean_tpr + std_tpr, 1)
+tprs_lower = np.maximum(mean_tpr - std_tpr, 0)
+plt.fill_between(mean_fpr, tprs_lower, tprs_upper, color='grey', alpha=.2,label=r'$\pm$ 1 std. dev.')
+
+plt.xlim([-0.05, 1.05])
+plt.ylim([-0.05, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver operating characteristic example')
+plt.legend(loc="lower right")
+plt.show()
